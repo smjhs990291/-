@@ -59,7 +59,11 @@ def _safe_float(v) -> Optional[float]:
 
 
 def _read_attributes(xlsx_path: str) -> Dict[str, object]:
-    df = pd.read_excel(xlsx_path, sheet_name=ATTR_SHEET_NAME)
+    try:
+        df = pd.read_excel(xlsx_path, sheet_name=ATTR_SHEET_NAME)
+    except Exception:
+        return {}
+
     if "name" not in df.columns or "value" not in df.columns:
         return {}
 
@@ -74,7 +78,11 @@ def _read_attributes(xlsx_path: str) -> Dict[str, object]:
 
 
 def _read_initial_capital(xlsx_path: str) -> Optional[float]:
-    df = pd.read_excel(xlsx_path, sheet_name=PERF_SHEET_NAME)
+    try:
+        df = pd.read_excel(xlsx_path, sheet_name=PERF_SHEET_NAME)
+    except Exception:
+        return None
+
     if "Unnamed: 0" not in df.columns:
         return None
 
@@ -116,7 +124,11 @@ def read_file_meta(xlsx_path: str) -> FileMeta:
 
 
 def read_trade_list(xlsx_path: str, meta: FileMeta) -> pd.DataFrame:
-    df = pd.read_excel(xlsx_path, sheet_name=TRADE_SHEET_NAME)
+    try:
+        df = pd.read_excel(xlsx_path, sheet_name=TRADE_SHEET_NAME)
+    except Exception:
+        return pd.DataFrame()
+
     df = df.copy()
 
     df.columns = [str(c).strip() for c in df.columns]
@@ -541,9 +553,14 @@ def build_report_tables(
     stats_long = _subset_stats(exit_long, initial_capital)
     stats_short = _subset_stats(exit_short, initial_capital)
 
-    max_contracts_all = float(pd.to_numeric(merged_trades.get("持倉大小(數量)"), errors="coerce").abs().max())
-    max_contracts_long = float(pd.to_numeric(merged_trades.loc[merged_trades["類型"].astype(str).str.contains("做多", na=False), "持倉大小(數量)"], errors="coerce").abs().max())
-    max_contracts_short = float(pd.to_numeric(merged_trades.loc[merged_trades["類型"].astype(str).str.contains("做空", na=False), "持倉大小(數量)"], errors="coerce").abs().max())
+    if "持倉大小(數量)" in merged_trades.columns:
+        max_contracts_all = float(pd.to_numeric(merged_trades["持倉大小(數量)"], errors="coerce").abs().max())
+        max_contracts_long = float(pd.to_numeric(merged_trades.loc[merged_trades["類型"].astype(str).str.contains("做多", na=False), "持倉大小(數量)"], errors="coerce").abs().max())
+        max_contracts_short = float(pd.to_numeric(merged_trades.loc[merged_trades["類型"].astype(str).str.contains("做空", na=False), "持倉大小(數量)"], errors="coerce").abs().max())
+    else:
+        max_contracts_all = float("nan")
+        max_contracts_long = float("nan")
+        max_contracts_short = float("nan")
 
     bnh_usd_total = 0.0
     bnh_cap_total = 0.0
@@ -673,11 +690,14 @@ def build_report_tables(
         columns=["Unnamed: 0", "全部 USD", "全部 %", "看多 USD", "看多 %", "看空 USD", "看空 %"],
     )
 
-    trade_range = merged_trades.dropna(subset=["日期/時間"]).sort_values("日期/時間")["日期/時間"]
-    if not trade_range.empty:
-        start = trade_range.iloc[0]
-        end = trade_range.iloc[-1]
-        trade_range_str = f"{start.year}年{start.month:02d}月{start.day:02d}日, {start.hour:02d}:{start.minute:02d} — {end.year}年{end.month:02d}月{end.day:02d}日, {end.hour:02d}:{end.minute:02d}"
+    if "日期/時間" in merged_trades.columns:
+        trade_range = merged_trades.dropna(subset=["日期/時間"]).sort_values("日期/時間")["日期/時間"]
+        if not trade_range.empty:
+            start = trade_range.iloc[0]
+            end = trade_range.iloc[-1]
+            trade_range_str = f"{start.year}年{start.month:02d}月{start.day:02d}日, {start.hour:02d}:{start.minute:02d} — {end.year}年{end.month:02d}月{end.day:02d}日, {end.hour:02d}:{end.minute:02d}"
+        else:
+            trade_range_str = ""
     else:
         trade_range_str = ""
 
@@ -866,7 +886,11 @@ def merge_and_export(excel_files: List[str], output_path: str) -> Tuple[pd.DataF
 
     merged = pd.concat(all_trades, ignore_index=True) if all_trades else pd.DataFrame()
 
-    base_attrs = pd.read_excel(excel_files[0], sheet_name=ATTR_SHEET_NAME) if excel_files else None
+    try:
+        base_attrs = pd.read_excel(excel_files[0], sheet_name=ATTR_SHEET_NAME) if excel_files else None
+    except Exception:
+        base_attrs = None
+
     perf, analysis, risk, trade_list_out, attrs = build_report_tables(merged, base_attrs)
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
@@ -888,7 +912,11 @@ def merge_and_export_to_bytes(excel_files: List[str]) -> bytes:
         all_trades.append(trades)
 
     merged = pd.concat(all_trades, ignore_index=True) if all_trades else pd.DataFrame()
-    base_attrs = pd.read_excel(excel_files[0], sheet_name=ATTR_SHEET_NAME) if excel_files else None
+    try:
+        base_attrs = pd.read_excel(excel_files[0], sheet_name=ATTR_SHEET_NAME) if excel_files else None
+    except Exception:
+        base_attrs = None
+
     perf, analysis, risk, trade_list_out, attrs = build_report_tables(merged, base_attrs)
 
     buf = io.BytesIO()
